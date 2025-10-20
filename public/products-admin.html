@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Quản lý sản phẩm - Susan Shop</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fffaf5;
+      margin: 0;
+      color: #333;
+    }
+    header {
+      background: #8b4513;
+      color: #fff;
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    nav a {
+      color: white;
+      margin: 0 10px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+    nav a:hover { text-decoration: underline; }
+    main { padding: 20px; max-width: 1000px; margin: auto; }
+    form {
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px #ccc;
+      margin-bottom: 30px;
+    }
+    input {
+      padding: 8px;
+      width: 18%;
+      margin: 5px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    button {
+      background: #8b4513;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover { background: #a0522d; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      box-shadow: 0 0 10px #ccc;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background: #8b4513;
+      color: #fff;
+    }
+    img {
+      width: 60px;
+      height: 60px;
+      object-fit: cover;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📦 Quản lý sản phẩm</h1>
+    <nav>
+
+      <a href="admin.html">Người dùng</a>
+      <a href="admin-stats.html">Thống kê</a>
+      <a href="admin-customers.html">khách hàng</a>
+      <a href="products-admin.html">Sản phẩm</a>
+      <button id="logoutBtn">Đăng xuất</button>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Thêm sản phẩm mới</h2>
+    <form id="addForm">
+      <input type="text" id="name" placeholder="Tên sản phẩm" required>
+      <input type="number" id="price" placeholder="Giá" required>
+      <input type="text" id="detail" placeholder="Mô tả" required>
+      <input type="text" id="image" placeholder="Link hình ảnh" required>
+      <input type="number" id="cate_id" placeholder="ID danh mục (1=Cafe, 2=Bánh)" required>
+      <button type="submit">➕ Thêm</button>
+    </form>
+
+    <h2>Danh sách sản phẩm</h2>
+    <table id="productTable">
+      <thead>
+        <tr>
+          <th>Ảnh</th>
+          <th>Tên</th>
+          <th>Giá</th>
+          <th>Chi tiết</th>
+          <th>Danh mục</th>
+          <th>Hành động</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
+
+  <script type="module">
+  import { apiGet, apiPost, apiDelete } from "./js/api.js";
+    const tbody = document.querySelector("#productTable tbody");
+
+    // ✅ Kiểm tra quyền admin
+    const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if (!currentUser || !currentUser.is_admin) {
+      alert("🚫 Bạn không có quyền truy cập!");
+      window.location.href = "login.html";
+    }
+
+    // 🧭 Tải danh sách sản phẩm
+    async function loadProducts() {
+      tbody.innerHTML = "";
+      const products = await apiGet("products");
+      products.forEach(p => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><img src="${p.image}" alt=""></td>
+          <td>${p.name}</td>
+          <td>${p.price.toLocaleString ? p.price.toLocaleString() + 'đ' : p.price + 'đ'}</td>
+          <td>${p.detail}</td>
+          <td>${p.cate_id}</td>
+          <td>
+            <button onclick="deleteProduct('${p.id}')">🗑️ Xóa</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // 🆕 Thêm sản phẩm mới
+    document.getElementById("addForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = document.getElementById("name").value.trim();
+      const price = parseFloat(document.getElementById("price").value);
+      const detail = document.getElementById("detail").value.trim();
+      const image = document.getElementById("image").value.trim();
+      const cate_id = parseInt(document.getElementById("cate_id").value);
+
+      if (!name || !price || !detail || !image || !cate_id) {
+        alert("⚠️ Vui lòng nhập đầy đủ thông tin!");
+        return;
+      }
+
+      try {
+        // 1) Create product
+        const created = await apiPost("products", { name, price, detail, image, cate_id });
+
+        // 2) Create a default variant so the product can be added to cart immediately
+        try {
+          const variantPayload = {
+            product_id: created.id || created || null,
+            variant_name: 'Default',
+            price: price,
+            quantity: 100,
+            image: image
+          };
+          await apiPost('product_variants', variantPayload);
+        } catch (vErr) {
+          console.warn('Failed to create default variant for product', vErr);
+        }
+
+        alert("✅ Thêm sản phẩm thành công!");
+        e.target.reset();
+        loadProducts();
+      } catch (err) {
+        console.error('Failed to add product', err);
+        alert('❌ Không thể thêm sản phẩm (kiểm tra json-server)');
+      }
+    });
+
+    // 🗑️ Xóa sản phẩm
+    window.deleteProduct = async function(id) {
+      if (confirm("Bạn có chắc muốn xóa sản phẩm này?")) {
+        try {
+          await apiDelete(`products/${id}`);
+          alert("🗑️ Đã xóa sản phẩm!");
+          loadProducts();
+        } catch (err) {
+          console.error('Delete product failed', err);
+          alert('❌ Không thể xóa sản phẩm (kiểm tra json-server)');
+        }
+      }
+    };
+
+    // 🔁 Gọi khi mở trang
+    loadProducts();
+
+    // 🚪 Đăng xuất
+    document.getElementById("logoutBtn").addEventListener("click", () => {
+      localStorage.removeItem("currentUser");
+      window.location.href = "login.html";
+    });
+    
+  </script>
+</body>
+</html>

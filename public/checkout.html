@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Thanh toán - Susan Shop</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fffaf5;
+      margin: 0;
+      color: #333;
+    }
+    header {
+      background: #8b4513;
+      color: white;
+      padding: 15px;
+      text-align: center;
+    }
+    main {
+      max-width: 800px;
+      margin: 30px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background: #f4e1d2;
+    }
+    button {
+      background: #8b4513;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      display: block;
+      margin: 0 auto;
+    }
+    button:hover {
+      background: #a0522d;
+    }
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Thanh toán</h1>
+    <nav>
+      <a href="cart.html" style="color:white;text-decoration:none;">← Quay lại giỏ hàng</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Thông tin đơn hàng</h2>
+    <div id="order-summary"></div>
+    <button id="checkout-btn">Xác nhận thanh toán</button>
+  </main>
+
+  <footer>
+    <p>© 2025 Susan Shop</p>
+  </footer>
+
+  <script type="module">
+    const API_URL = "http://localhost:3001";
+    const orderSummary = document.getElementById("order-summary");
+    const checkoutBtn = document.getElementById("checkout-btn");
+
+  // 🛒 Lấy giỏ hàng từ localStorage (key 'cart_items' dùng bởi js/cart.js)
+  const cart = JSON.parse(localStorage.getItem("cart_items") || "[]");
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+
+    if (!user) {
+      alert("⚠️ Vui lòng đăng nhập trước khi thanh toán!");
+      window.location.href = "login.html";
+    }
+
+    if (cart.length === 0) {
+      orderSummary.innerHTML = '<p>Giỏ hàng trống, không thể thanh toán.</p>';
+      checkoutBtn.style.display = "none";
+    } else {
+      let total = 0;
+      orderSummary.innerHTML = `
+        <table>
+          <tr>
+            <th>Tên sản phẩm</th>
+            <th>Giá</th>
+            <th>Số lượng</th>
+            <th>Thành tiền</th>
+          </tr>
+          ${cart.map(item => {
+            const subtotal = item.price * item.quantity;
+            total += subtotal;
+            return `
+              <tr>
+                <td>${item.name}</td>
+                <td>${item.price.toLocaleString()}đ</td>
+                <td>${item.quantity}</td>
+                <td>${subtotal.toLocaleString()}đ</td>
+              </tr>
+            `;
+          }).join("")}
+          <tr>
+            <td colspan="3"><b>Tổng cộng</b></td>
+            <td><b>${total.toLocaleString()}đ</b></td>
+          </tr>
+        </table>
+      `;
+    }
+
+    // 🧾 Hàm tạo đơn hàng (thêm log và thông báo lỗi chi tiết)
+    async function createOrder(userId, items) {
+      console.log('Creating order for user', userId, 'items:', items);
+      const order = {
+        user_id: userId,
+        created_date: new Date().toISOString(),
+        status: "pending"
+      };
+
+      // Tạo đơn hàng
+      const resOrder = await fetch(`${API_URL}/orders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(order)
+      });
+
+      if (!resOrder.ok) {
+        const text = await resOrder.text().catch(() => '');
+        throw new Error(`Không thể tạo đơn hàng: ${resOrder.status} ${resOrder.statusText} ${text}`);
+      }
+      const newOrder = await resOrder.json();
+
+      // Thêm chi tiết sản phẩm
+      for (const item of items) {
+        const productId = item.productId || item.product_id || item.id;
+        const detail = {
+          order_id: newOrder.id,
+          product_id: productId,
+          quantity: item.quantity,
+          unit_price: item.price
+        };
+
+        const resDetail = await fetch(`${API_URL}/order_details`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(detail)
+        });
+
+        if (!resDetail.ok) {
+          const t = await resDetail.text().catch(() => '');
+          console.warn('Không thể lưu chi tiết đơn hàng', item.name, resDetail.status, t);
+        }
+
+        // Cập nhật tồn kho cho biến thể (nếu variantId có trong item)
+        try {
+          const variantId = item.variantId || item.variant_id || item.vId;
+          if (variantId) {
+            const vRes = await fetch(`${API_URL}/product_variants/${variantId}`);
+            if (vRes.ok) {
+              const variant = await vRes.json();
+              const newQty = Math.max(0, (variant.quantity || 0) - item.quantity);
+              await fetch(`${API_URL}/product_variants/${variantId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...variant, quantity: newQty })
+              });
+            }
+          }
+        } catch (e) {
+          console.warn('Không thể cập nhật tồn kho cho biến thể', e);
+        }
+      }
+
+      return newOrder;
+    }
+
+    // 🧠 Sự kiện thanh toán
+    checkoutBtn.addEventListener("click", async () => {
+      if (cart.length === 0) {
+        alert("🛒 Giỏ hàng trống!");
+        return;
+      }
+
+      try {
+        const result = await createOrder(user.id, cart);
+        console.log('Order created', result);
+        // Xoá giỏ hàng dùng key cart_items
+        localStorage.removeItem("cart_items");
+        alert("✅ Thanh toán thành công!");
+        window.location.href = "thankyou.html";
+      } catch (error) {
+        console.error("❌ Lỗi khi thanh toán:", error);
+        alert("❌ Có lỗi khi thanh toán: " + (error.message || error));
+      }
+    });
+  </script>
+</body>
+</html>
