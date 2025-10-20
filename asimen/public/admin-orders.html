@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Quản lý đơn hàng</title>
+  <style>
+    :root{--brand:#8b4513;--accent:#2196f3}
+    body {
+      font-family: Arial, sans-serif;
+      background: #fffaf5;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    header{background:var(--brand);color:#fff;padding:14px 18px}
+    header nav a{color:#ffd700;text-decoration:none;margin:0 8px}
+    main{max-width:1100px;margin:26px auto;background:#fff;border-radius:12px;padding:18px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+    h1, h2 {
+      text-align: center;
+      color: var(--brand);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #eee;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background-color: #faf0e8;
+      color: var(--brand);
+    }
+    .actions button {
+      background-color: var(--accent);
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 5px;
+    }
+    .actions .delete-btn {
+      background-color: #f44336;
+    }
+    .status-select {
+        padding: 6px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+    }
+    .total-amount {
+        font-weight: bold;
+        color: green;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="max-width:1100px;margin:0 auto;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h1>Quản trị Susan</h1>
+      </div>
+      <nav>
+        <a href="products-admin.html">Sản phẩm</a> |
+        <a href="admin-categories.html">Danh mục</a> |
+        <a href="admin-customers.html">Khách hàng</a> |
+        <a href="admin-orders.html" style="text-decoration:underline;color:#fff">Đơn hàng</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <h2>Quản lý đơn hàng</h2>
+
+    <table aria-live="polite">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Khách hàng</th>
+          <th>Ngày đặt</th>
+          <th>Tổng tiền</th>
+          <th>Trạng thái</th>
+          <th>Hành động</th>
+        </tr>
+      </thead>
+      <tbody id="orderTableBody"></tbody>
+    </table>
+  </main>
+
+ <script type="module">
+    // Đảm bảo tệp api.js nằm cùng cấp hoặc đúng đường dẫn
+   import { apiGet, apiPost, apiPut, apiDelete } from "./js/api.js";
+
+    const tbody = document.getElementById("orderTableBody");
+    const statusOptions = ["pending", "confirmed", "delivering", "delivered", "cancelled"];
+    let ordersCache = [];
+    let usersCache = {};
+    let productsCache = {};
+
+    function formatVND(amount) {
+        if (typeof amount !== 'number' || isNaN(amount)) return '0 VNĐ';
+        return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+    }
+
+    // Hàm tổng hợp dữ liệu đơn hàng
+    async function fetchAllData() {
+        try {
+            // 1. Tải tất cả dữ liệu cần thiết
+            const [orders, orderDetails, users, products] = await Promise.all([
+                apiGet("orders"),
+                apiGet("order_details"),
+                apiGet("users"),
+                apiGet("products")
+            ]);
+
+            // 2. Chuẩn hóa dữ liệu Users và Products (dùng ID làm key để tra cứu nhanh)
+            users.forEach(u => usersCache[String(u.id)] = u);
+            products.forEach(p => productsCache[String(p.id)] = p);
+
+            // 3. Tính toán Chi tiết & Tổng tiền cho từng Đơn hàng
+            const combinedOrders = orders.map(order => {
+                const details = orderDetails.filter(detail => String(detail.order_id) === String(order.id));
+                const customer = usersCache[String(order.user_id)] || { name: "Không rõ", email: "N/A" };
+                
+                let totalAmount = 0;
+                
+                // Gắn chi tiết sản phẩm và tính tổng tiền
+                const items = details.map(detail => {
+                    const product = productsCache[String(detail.product_id)] || { name: "Sản phẩm không rõ" };
+                    const itemTotal = detail.quantity * detail.unit_price;
+                    totalAmount += itemTotal;
+                    
+                    return {
+                        ...detail,
+                        name: product.name,
+                        itemTotal: itemTotal
+                    };
+                });
+
+                return {
+                    ...order,
+                    customerName: customer.name,
+                    customerEmail: customer.email,
+                    totalAmount: totalAmount,
+                    items: items
+                };
+            }).sort((a, b) => new Date(b.created_date) - new Date(a.created_date)); // Sắp xếp theo ngày mới nhất
+
+            ordersCache = combinedOrders;
+            renderTable();
+
+        } catch (err) {
+            alert("Lỗi tải dữ liệu: " + err.message);
+            console.error(err);
+        }
+    }
+
+    // Hàm hiển thị bảng
+    function renderTable() {
+        if (ordersCache.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:#666;">Không có đơn hàng nào.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = ordersCache.map(o => `
+            <tr data-id="${o.id}">
+                <td>#${o.id}</td>
+                <td>
+                    ${o.customerName}
+                    <div style="font-size:12px; color:#666;">${o.customerEmail}</div>
+                </td>
+                <td>${new Date(o.created_date).toLocaleString('vi-VN')}</td>
+                <td class="total-amount">${formatVND(o.totalAmount)}</td>
+                <td>
+                    <select class="status-select" data-id="${o.id}">
+                    ${statusOptions.map(s => 
+                        `<option value="${s}" ${o.status === s ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>` // Viết hoa chữ cái đầu
+                    ).join('')}
+                    </select>
+                </td>
+                <td class="actions">
+                    <button onclick="viewDetails('${o.id}')">Chi tiết</button>
+                    <button class="delete-btn" onclick="deleteOrder('${o.id}')">🗑 Xóa</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    // Xử lý sự kiện thay đổi trạng thái
+    tbody.addEventListener('change', async (e) => {
+        if (e.target.classList.contains('status-select')) {
+            const id = e.target.dataset.id;
+            const newStatus = e.target.value;
+            
+            const currentOrder = ordersCache.find(o => String(o.id) === String(id));
+            if (!currentOrder) return;
+
+            if (!confirm(`Xác nhận đổi trạng thái đơn hàng #${id} từ "${currentOrder.status.toUpperCase()}" thành "${newStatus.toUpperCase()}"?`)) {
+                e.target.value = currentOrder.status; // Quay lại trạng thái cũ
+                return;
+            }
+            
+            try {
+                // Cập nhật lên JSON Server (chỉ cần cập nhật bảng "orders")
+                await apiPut(`orders/${id}`, { status: newStatus }); 
+                
+                // Cập nhật cache
+                currentOrder.status = newStatus;
+
+                alert(`Đơn hàng #${id} đã được cập nhật trạng thái thành: ${newStatus.toUpperCase()}`);
+                renderTable();
+            } catch (err) {
+                alert('Lỗi cập nhật trạng thái: ' + err.message);
+                e.target.value = currentOrder.status; // Quay lại trạng thái cũ nếu lỗi
+            }
+        }
+    });
+
+    // Hàm Xóa đơn hàng (Global function)
+    window.deleteOrder = async function(id) {
+        if (!confirm(`Bạn có chắc muốn xóa đơn hàng #${id} (và các chi tiết đơn hàng liên quan)?`)) return;
+        try {
+            // JSON Server không tự động xóa chi tiết đơn hàng, nên bạn phải xóa thủ công.
+            // Tuy nhiên, để đơn giản, chúng ta chỉ xóa đơn hàng chính.
+            await apiDelete(`orders/${id}`);
+            
+            // Xóa khỏi cache
+            ordersCache = ordersCache.filter(o => String(o.id) !== String(id));
+            renderTable();
+            alert(`Đơn hàng #${id} đã được xóa!`);
+        } catch (err) {
+            alert("Lỗi khi xóa: " + err.message);
+        }
+    };
+    
+    // Hàm Xem chi tiết
+    window.viewDetails = function(id) {
+        const order = ordersCache.find(o => String(o.id) === String(id));
+        if (!order || !order.items) return;
+        
+        const itemDetails = order.items.map(item => 
+            `- ${item.name || 'Sản phẩm không rõ'}: SL ${item.quantity} x ${formatVND(item.unit_price)} = ${formatVND(item.itemTotal)}`
+        ).join('\n');
+        
+        alert(
+            `CHI TIẾT ĐƠN HÀNG #${order.id}\n` +
+            `-----------------------------------\n` +
+            `Khách hàng: ${order.customerName} (${order.customerEmail})\n` +
+            `Ngày đặt: ${new Date(order.created_date).toLocaleString('vi-VN')}\n` +
+            `Trạng thái: ${order.status.toUpperCase()}\n` +
+            `\nSản phẩm (${order.items.length} loại):\n${itemDetails}\n` +
+            `\n-----------------------------------\n` +
+            `TỔNG TIỀN: ${formatVND(order.totalAmount)}`
+        );
+    };
+
+    // Tải dữ liệu khi trang được load
+    fetchAllData();
+</script>
+</body>
+</html>

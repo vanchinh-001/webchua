@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Quản lý khách hàng</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #fffaf5;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+    h1 {
+      text-align: center;
+      color: #8b4513;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f2e3d5;
+      color: #8b4513;
+    }
+    input[type="text"], input[type="email"], input[type="password"] {
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #8b4513;
+      color: white;
+      border: none;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover {
+      opacity: 0.8;
+    }
+    .actions button {
+      margin-right: 5px;
+    }
+    .add-form {
+      margin-top: 20px;
+      background: #fff;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Quản lý khách hàng</h1>
+
+  <div class="add-form">
+    <input type="text" id="name" placeholder="Tên">
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Mật khẩu">
+    <button id="addBtn">Thêm khách hàng</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Tên</th>
+        <th>Email</th>
+        <th>Mật khẩu</th>
+        <th>Quyền</th>
+        <th>Hành động</th>
+      </tr>
+    </thead>
+    <tbody id="userTableBody"></tbody>
+  </table>
+
+  <script type="module">
+   import { apiGet, apiPost, apiPut, apiDelete } from "./js/api.js";
+
+    const tbody = document.getElementById("userTableBody");
+    const addBtn = document.getElementById("addBtn");
+
+    const nameInput = document.getElementById("name");
+    const emailInput = document.getElementById("email");
+    const passInput = document.getElementById("password");
+
+    let users = [];
+
+    async function loadUsers() {
+      try {
+        users = await apiGet("users");
+        renderTable();
+      } catch (err) {
+        alert("Lỗi tải khách hàng: " + err.message);
+      }
+    }
+
+    function renderTable() {
+      tbody.innerHTML = users.map(u => `
+        <tr>
+          <td>${u.id}</td>
+          <td><input type="text" value="${u.name}" data-id="${u.id}" data-field="name"></td>
+          <td><input type="email" value="${u.email}" data-id="${u.id}" data-field="email"></td>
+          <td><input type="text" value="${u.password}" data-id="${u.id}" data-field="password"></td>
+          <td>${u.is_admin ? "Admin" : "Khách"}</td>
+          <td class="actions">
+            <button onclick="saveUser('${u.id}')">💾 Lưu</button>
+            <button onclick="deleteUser('${u.id}')">🗑 Xóa</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    // ✅ Thêm khách hàng
+    addBtn.addEventListener("click", async () => {
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+      const password = passInput.value.trim();
+
+      if (!name || !email || !password) {
+        alert("Vui lòng nhập đầy đủ thông tin!");
+        return;
+      }
+
+      try {
+        const newUser = await apiPost("users", {
+          name,
+          email,
+          password,
+          is_admin: false
+        });
+        users.push(newUser);
+        renderTable();
+        nameInput.value = emailInput.value = passInput.value = "";
+      } catch (err) {
+        alert("Lỗi thêm khách hàng: " + err.message);
+      }
+    });
+
+    // ✅ Sửa khách hàng
+    window.saveUser = async function(id) {
+      const rowInputs = document.querySelectorAll(`[data-id='${id}']`);
+      const updated = {};
+      rowInputs.forEach(inp => updated[inp.dataset.field] = inp.value);
+      const oldUser = users.find(u => String(u.id) === String(id));
+      updated.is_admin = oldUser.is_admin;
+      try {
+        await apiPut(`users/${id}`, updated);
+        Object.assign(oldUser, updated);
+        alert("✅ Đã lưu khách hàng!");
+      } catch (err) {
+        alert("Lỗi khi lưu: " + err.message);
+      }
+    };
+
+    // ✅ Xóa khách hàng
+    window.deleteUser = async function(id) {
+      if (!confirm("Bạn có chắc muốn xóa khách hàng này?")) return;
+      try {
+        await apiDelete(`users/${id}`);
+        users = users.filter(u => String(u.id) !== String(id));
+        renderTable();
+      } catch (err) {
+        alert("Lỗi khi xóa: " + err.message);
+      }
+    };
+
+    loadUsers();
+  </script>
+</body>
+</html>

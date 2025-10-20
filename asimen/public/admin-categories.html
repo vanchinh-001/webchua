@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Quản lý danh mục - Susan Admin</title>
+  <link rel="stylesheet" href="../styles/main.css">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #fffaf5;
+    }
+    header {
+      background: #8b4513;
+      color: #fff;
+      padding: 15px;
+      text-align: center;
+    }
+    main {
+      max-width: 800px;
+      margin: 30px auto;
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 3px 8px rgba(0,0,0,0.1);
+    }
+    h2 { color: #8b4513; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background: #8b4513;
+      color: #fff;
+    }
+    button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .edit-btn { background: #2196f3; color: white; }
+    .delete-btn { background: #f44336; color: white; }
+    .add-form {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 8px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Quản lý danh mục sản phẩm</h1>
+    <nav>
+      <a href="admin-orders.html" style="color:#ffd700;text-decoration:none;">← Quay lại quản lý sản phẩm</a>
+    </nav>
+  </header>
+
+  <main>
+    <h2>Danh sách danh mục</h2>
+
+    <div class="add-form">
+      <input type="text" id="new-category-name" placeholder="Nhập tên danh mục...">
+      <button id="add-btn" style="background:#8b4513;color:#fff;">➕ Thêm</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Tên danh mục</th>
+          <th>Hành động</th>
+        </tr>
+      </thead>
+      <tbody id="category-table-body"></tbody>
+    </table>
+  </main>
+
+  <script type="module">
+   import { apiGet, apiPost, apiPut, apiDelete } from "./js/api.js";
+   
+
+
+    const tbody = document.getElementById("category-table-body");
+    const addBtn = document.getElementById("add-btn");
+    const nameInput = document.getElementById("new-category-name");
+
+    async function loadCategories() {
+      const categories = await apiGet("categories");
+      tbody.innerHTML = categories.map(c => `
+        <tr>
+          <td>${c.id}</td>
+          <td contenteditable="true" data-id="${c.id}" class="editable">${c.name}</td>
+          <td>
+            <button class="edit-btn" data-id="${c.id}">💾 Lưu</button>
+            <button class="delete-btn" data-id="${c.id}">🗑 Xóa</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    addBtn.addEventListener("click", async () => {
+      const name = nameInput.value.trim();
+      if (!name) return alert("Vui lòng nhập tên danh mục!");
+      await apiPost("categories", { name });
+      nameInput.value = "";
+      loadCategories();
+    });
+
+    tbody.addEventListener("click", async (e) => {
+      const id = e.target.dataset.id;
+      if (e.target.classList.contains("delete-btn")) {
+        if (confirm("Xóa danh mục này?")) {
+          await apiDelete(`categories/${id}`);
+          loadCategories();
+        }
+      } else if (e.target.classList.contains("edit-btn")) {
+        const td = tbody.querySelector(`td.editable[data-id='${id}']`);
+        const newName = td.innerText.trim();
+        await apiPut(`categories/${id}`, { name: newName });
+        alert("✅ Đã cập nhật danh mục!");
+      }
+    });
+
+    loadCategories();
+  </script>
+</body>
+</html>
